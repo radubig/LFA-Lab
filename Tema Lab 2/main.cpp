@@ -24,10 +24,8 @@ public:
     const unordered_set<string>& getStariFinale() const;
 
 protected:
-    unsigned int nr_stari; //starile sunt indexate [0, nr_stari)
     string alfabet;
-    unordered_map<string, unsigned int> index_stare;
-    vector<unordered_map<char, vector<string> > > G;
+    unordered_map<string, unordered_map<char, vector<string> > > G;
     string stare_init;
     unordered_set<string> stari_finale;
 };
@@ -48,9 +46,7 @@ public:
     void minimize();
 };
 
-
-Automat::Automat()
-    :nr_stari(0) {}
+Automat::Automat() = default;
 
 void Automat::clear() noexcept
 {
@@ -65,13 +61,12 @@ void Automat::readFromFile(const std::string& file)
     if(!in.is_open())
         throw runtime_error("File " + file + " not opened!");
     this->clear();
+    unsigned int nr_stari;
     in >> nr_stari;
-    G.resize(nr_stari);
     for(int i = 0; i < nr_stari; i++)
     {
         string x;
         in >> x;
-        index_stare[x] = i;
     }
     in >> alfabet;
     in >> m;
@@ -80,7 +75,7 @@ void Automat::readFromFile(const std::string& file)
         string x, y;
         char c;
         in >> x >> y >> c;
-        G[index_stare[x]][c].push_back(y);
+        G[x][c].push_back(y);
     }
     in >> stare_init;
     int nr_stari_finale;
@@ -96,15 +91,15 @@ void Automat::readFromFile(const std::string& file)
 
 ostream& operator<<(ostream& os, const Automat& at)
 {
-    os << "Nr stari: " << at.nr_stari << "\n";
+    os << "Nr stari: " << at.G.size() << "\n";
     os << "Starile automatului: ";
-    for(const auto& i: at.index_stare)
+    for(const auto& i: at.G)
         os << i.first << " ";
     os << "\nDate automat:\n";
-    for(const auto& i: at.index_stare)
+    for(const auto& i: at.G)
     {
         os << "Starea " << i.first << " are urmatoarele tranzitii:\n";
-        for(const auto& lit: at.G[i.second])
+        for(const auto& lit: i.second)
         {
             os << "\t-cu litera " << lit.first << " se ajunge in starile ";
             for(const auto& j : lit.second)
@@ -137,12 +132,13 @@ const unordered_set<string>& Automat::getStariFinale() const
 
 bool Automat::existsStareFromG(const std::string& stare_plecare, char lit) const
 {
-    return G[index_stare.at(stare_plecare)].find(lit) != G[index_stare.at(stare_plecare)].end();
+    return G.count(stare_plecare) > 0 &&
+           G.at(stare_plecare).count(lit) > 0;
 }
 
 const vector<string>& Automat::getStareFromG(const string& stare_plecare, char lit) const
 {
-    return G[index_stare.at(stare_plecare)].at(lit);
+    return G.at(stare_plecare).at(lit);
 }
 
 DFA::DFA(const NFA& nfa)
@@ -150,7 +146,6 @@ DFA::DFA(const NFA& nfa)
 {
     stare_init = nfa.getStareInit();
     alfabet = nfa.getAlfabet();
-    index_stare[stare_init] = nr_stari++;
 
     queue<vector<string>> q;
     q.push({stare_init});
@@ -159,7 +154,10 @@ DFA::DFA(const NFA& nfa)
         vector<string> fr = q.front();
         q.pop();
 
-        G.emplace_back();
+        string stare_veche;
+        for(const auto& i : fr)
+            stare_veche += i;
+
         for(char i : alfabet)
         {
             set<string> s;
@@ -179,18 +177,17 @@ DFA::DFA(const NFA& nfa)
             }
 
             vector<string> reachable_states(s.begin(), s.end());
-            if(index_stare.find(stare_noua) == index_stare.end())
+            if(G.count(stare_noua) == 0)
             {
-                index_stare[stare_noua] = nr_stari++;
+                G[stare_noua] = {};
                 q.push(reachable_states);
                 if(add_new_final_state)
                     stari_finale.insert(stare_noua);
             }
-            G[G.size()-1][i].push_back(stare_noua);
+            G[stare_veche][i].push_back(stare_noua);
         }
     }
 }
-
 
 void DFA::minimize()
 {
@@ -205,7 +202,7 @@ void DFA::minimize()
         set<string> temp;
         for(const auto& q : new_states)
             for(const auto& c : alfabet)
-                for(const string& i : G[index_stare[q]][c])
+                for(const string& i : G[q][c])
                     temp.insert(i);
         set_difference(temp.begin(), temp.end(), reachable_states.begin(), reachable_states.end(),
                        inserter(new_states, new_states.begin())); // new_states = temp \ reachable_states
@@ -214,7 +211,7 @@ void DFA::minimize()
     }
 
     set<string> unreachable;
-    for(const auto& i : index_stare)
+    for(const auto& i : G)
         unreachable.insert(i.first);
     for(const auto& i : reachable_states)
         unreachable.erase(i);
@@ -223,21 +220,21 @@ void DFA::minimize()
     // delete tranzitions
     for(auto& a : G)
     {
-        auto it = a.begin();
-        while(it != a.end())
+        auto it = a.second.begin();
+        while(it != a.second.end())
         {
             for(const string& bad : unreachable)
                 if(it->second[0] == bad)
                 {
-                    it = a.erase(it);
+                    it = a.second.erase(it);
                     break;
                 }
                 else ++it;
         }
     }
     // delete states
-
-
+    for(const string& bad : unreachable)
+        G.erase(bad);
 }
 
 
@@ -252,6 +249,8 @@ int main()
         DFA dfa(nfa);
         cout << "Date despre DFA-ul construit din NFA: \n";
         cout << dfa << endl;
+
+        dfa.minimize();
     }
     catch (const std::runtime_error& err)
     {
