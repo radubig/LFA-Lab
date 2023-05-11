@@ -73,27 +73,6 @@ void citire()
     in.close();
 }
 
-[[maybe_unused]]
-void afisare_gramatica()
-{
-    ofstream out("output.txt");
-    for(const auto& i : G.nonterminale)
-    {
-        out << i.first << " -> ";
-        for(const auto& j : i.second)
-            out << j << " ";
-        out << "\n";
-    }
-    for(const auto& i : G.terminale)
-    {
-        out << i.first << " -> ";
-        for(const auto& j : i.second)
-            out << j << " ";
-        out << "\n";
-    }
-    out.close();
-}
-
 bool verificare_cuvant(const string& cuvant)
 {
     // Algoritm: https://www.geeksforgeeks.org/cyk-algorithm-for-context-free-grammar/amp/
@@ -132,7 +111,6 @@ bool verificare_cuvant(const string& cuvant)
 int main()
 {
     citire();
-    //afisare_gramatica();
     for(const string& cuv : cuvinte)
         if(verificare_cuvant(cuv))
             cout << "Cuvantul " << cuv << " este acceptat.\n";

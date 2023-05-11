@@ -1,7 +1,3 @@
-C -> AB 
-B -> CC 
-A -> BA 
-S -> AB BC 
-C -> a 
-B -> b 
-A -> a 
+DA
+NU
+NU
