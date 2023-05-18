@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <queue>
 #include <algorithm>
+#include <deque>
 
 using namespace std;
 
@@ -44,6 +45,10 @@ public:
     DFA() : Automat() {}
     explicit DFA(const NFA& nfa);
     void minimize();
+
+private:
+    void remove_unreachable();
+    void remove_non_distinguishable();
 };
 
 Automat::Automat() = default;
@@ -191,7 +196,12 @@ DFA::DFA(const NFA& nfa)
 
 void DFA::minimize()
 {
-    // Unreachable states
+    this->remove_unreachable();
+    this->remove_non_distinguishable();
+}
+
+void DFA::remove_unreachable()
+{
     set<string> reachable_states;
     set<string> new_states;
     reachable_states.insert(stare_init);
@@ -204,6 +214,7 @@ void DFA::minimize()
             for(const auto& c : alfabet)
                 for(const string& i : G[q][c])
                     temp.insert(i);
+        new_states.clear();
         set_difference(temp.begin(), temp.end(), reachable_states.begin(), reachable_states.end(),
                        inserter(new_states, new_states.begin())); // new_states = temp \ reachable_states
         for(const auto& i : new_states)
@@ -220,23 +231,115 @@ void DFA::minimize()
     // delete tranzitions
     for(auto& a : G)
     {
-        auto it = a.second.begin();
-        while(it != a.second.end())
-        {
-            for(const string& bad : unreachable)
-                if(it->second[0] == bad)
-                {
-                    it = a.second.erase(it);
-                    break;
-                }
-                else ++it;
-        }
+        auto delta = a.second;
+        a.second.clear();
+        for(auto& i : delta)
+            if(!i.second.empty() && reachable_states.count(i.second[0]) == 1)
+                a.second[i.first] = i.second;
     }
+
     // delete states
     for(const string& bad : unreachable)
         G.erase(bad);
 }
 
+void DFA::remove_non_distinguishable()
+{
+    set<string> Q; // Toate starile
+    for(const auto& i : G)
+        Q.insert(i.first);
+    set<string> F(stari_finale.begin(), stari_finale.end()); //Starile finale
+    set<string> Q_minus_F;
+    for(const auto& i : Q)
+        if(stari_finale.count(i) == 0)
+            Q_minus_F.insert(i);
+
+    // Algoritm
+    set<set<string>> P, W;
+    P.insert(F);
+    P.insert(Q_minus_F);
+    W = P;
+
+    while(!W.empty())
+    {
+        set<string> A = *W.begin();
+        W.erase(W.begin());
+        for(char c : alfabet)
+        {
+            // X este setul de stari pentru care o tranzitie cu c duce la o stare din A
+            set<string> X;
+            for(const auto& state : Q)
+                if(G[state].count(c) != 0 && A.count(G[state][c][0]) != 0)
+                    X.insert(state);
+
+            // foreach set Y : P, unde (X ∩ Y != 0) si (Y \ X != 0) do...
+            auto iter = P.begin();
+            while(iter != P.end())
+            {
+                set<string> Y = *iter;
+                set<string> X_inter_Y;
+                set_intersection(X.begin(), X.end(), Y.begin(), Y.end(), inserter(X_inter_Y, X_inter_Y.begin()));
+                set<string> Y_minus_X;
+                set_difference(Y.begin(), Y.end(), X.begin(), X.end(), inserter(Y_minus_X, Y_minus_X.begin()));
+                if(!X_inter_Y.empty() && !Y_minus_X.empty())
+                {
+                    P.insert(X_inter_Y);
+                    P.insert(Y_minus_X);
+                    P.erase(iter);
+                    iter = P.begin();
+
+                    if(W.count(Y) != 0)
+                    {
+                        W.erase(Y);
+                        W.insert(X_inter_Y);
+                        W.insert(Y_minus_X);
+                    }
+                    else
+                    {
+                        if(X_inter_Y.size() <= Y_minus_X.size())
+                            W.insert(X_inter_Y);
+                        else
+                            W.insert(Y_minus_X);
+                    }
+                }
+                else
+                    iter++;
+            }
+        }
+    }
+
+    // construire G dupa setul de stari P
+    auto G_old = G;
+    G.clear();
+
+    // destState contine informatii despre starile in care trebuie sa se ajunga in DFA minimal
+    unordered_map<string, string> destState;
+    for(const auto& S : P)
+    {
+        string goodState = *S.begin();
+        for(const string& s : S)
+            destState[s] = goodState;
+    }
+
+    //constructie G
+    for(const auto& S : P)
+    {
+        // luam doar prima stare din S
+        string goodState = *S.begin();
+        G[goodState];
+        for(char c : alfabet) if(G_old[goodState].count(c) != 0)
+            G[goodState][c].push_back( destState[G_old[goodState][c][0]] );
+    }
+
+    // update stare initiala
+    stare_init = destState[stare_init];
+
+    // update stari finale
+    auto sf = stari_finale;
+    stari_finale.clear();
+    for(auto& i : sf)
+        stari_finale.insert(destState[i]);
+}
 
 int main()
 {
@@ -251,6 +354,8 @@ int main()
         cout << dfa << endl;
 
         dfa.minimize();
+        cout << "DFA minimizat: \n";
+        cout << dfa << endl;
     }
     catch (const std::runtime_error& err)
     {
